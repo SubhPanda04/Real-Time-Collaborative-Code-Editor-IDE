@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Code2, Users, ArrowRight, Shield } from 'lucide-react';
 
-const socket = io("http://localhost:5000");
+const socket = io("https://real-time-collaborative-code-editor-ide.onrender.com");
 
 const App = () => {
 
