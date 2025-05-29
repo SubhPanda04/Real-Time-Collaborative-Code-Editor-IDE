@@ -17,6 +17,8 @@ const App = () => {
   const [copySuccess, setCopySucess] = useState("");
   const [users,setUsers] = useState([]);
   const [typing,setTyping] = useState("");
+  const [output,setOutput] = useState("");
+  const [version,setVersion] = useState("*");
 
   useEffect(()=> {
     socket.on("userJoined", (users)=> {
@@ -34,6 +36,10 @@ const App = () => {
 
     socket.on("languageUpdate", (newLanguage)=> {
       setLanguage(newLanguage);
+    });
+
+    socket.on("codeResponse", (response)=> {
+      setOutput(response.run.output)
     })
 
     return ()=> {
@@ -41,6 +47,7 @@ const App = () => {
       socket.off("codeUpdate");
       socket.off("userTyping");
       socket.off("languageUpdate");
+      socket.off("codeResponse");
     }
   },[]);
 
@@ -92,6 +99,10 @@ const App = () => {
     const newLanguage = e.target.value;
     setLanguage(newLanguage);
     socket.emit("languageChange", {roomId, language:newLanguage});
+  };
+
+  const runCode = ()=> {
+    socket.emit("compileCode", {code,roomId,language,version})
   }
 
   if(!joined) {
@@ -228,7 +239,7 @@ const App = () => {
     <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950"></div>
     <div className="relative z-10 h-full">
       <Editor
-        height={"100%"}
+        height={"60%"}
         defaultLanguage={language}
         language={language}
         value={code}
@@ -239,6 +250,18 @@ const App = () => {
           fontSize: 20,
         }}
       />
+     <button 
+      onClick={runCode} 
+      className="px-6 py-3 bg-slate-800/50 hover:bg-gradient-to-r hover:from-blue-600/20 hover:to-purple-600/20 border border-slate-700/50 hover:border-blue-500/50 text-slate-100 hover:text-white font-medium rounded-lg transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-xl backdrop-blur-sm"
+    >
+      Execute
+    </button>
+
+    <textarea 
+      value={output} 
+      placeholder="Output will appear here..." 
+      className="w-full h-54 bg-slate-800/30 border border-slate-700/30 hover:bg-slate-800/50 rounded-lg px-4 py-3 text-slate-200 placeholder-slate-400 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 backdrop-blur-sm resize-none"
+    />
     </div>
   </div>
 </div>
