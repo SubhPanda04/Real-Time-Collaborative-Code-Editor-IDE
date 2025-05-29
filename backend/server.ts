@@ -1,13 +1,38 @@
-import express from 'express';
+import express, { Express } from 'express';
 import http from 'http';
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import path from "path";
 import axios from 'axios';
 
-const app = express();
+interface Room {
+  users: Set<string>;
+  code: string;
+  output?: string;
+}
+
+const app: Express = express();
 const server = http.createServer(app);
 
-const io = new Server(server, {
+// Define both incoming and outgoing socket events
+interface ServerToClientEvents {
+  userJoined: (users: string[]) => void;
+  codeUpdate: (code: string) => void;
+  userTyping: (user: string) => void;
+  languageUpdate: (language: string) => void;
+  codeResponse: (data: any) => void;
+}
+
+interface ClientToServerEvents {
+  join: (data: { roomId: string; userName: string }) => void;
+  codeChange: (data: { roomId: string; code: string }) => void;
+  leaveRoom: () => void;
+  typing: (data: { roomId: string; userName: string }) => void;
+  languageChange: (data: { roomId: string; language: string }) => void;
+  compileCode: (data: { code: string; roomId: string; language: string; version: string; input: string }) => void;
+  disconnect: () => void;
+}
+
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
     origin: '*',
   },
@@ -18,8 +43,8 @@ const rooms = new Map();
 io.on('connection', (socket) => {
   console.log('User Connected', socket.id);
 
-  let currentRoom = null;
-  let currentUser = null;
+  let currentRoom: string | null = null;
+  let currentUser: string | null = null;
 
   socket.on('join', ({ roomId, userName }) => {
     if (currentRoom) {

@@ -1,13 +1,17 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import './App.css';
 import io from "socket.io-client";
-import { useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Code2, Users, ArrowRight, Shield } from 'lucide-react';
 
 const socket = io("https://real-time-collaborative-code-editor-ide.onrender.com");
 
-const App = () => {
+interface User {
+  id: string;
+  name: string;
+}
+
+const App: React.FC = () => {
 
   const [joined, setJoined] = useState(false);
   const [roomId, setRoomId] = useState("");
@@ -15,7 +19,7 @@ const App = () => {
   const [language, setLanguage] = useState("javascript");
   const [code, setCode] = useState('// Start code here');
   const [copySuccess, setCopySucess] = useState("");
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [typing, setTyping] = useState("");
   const [output, setOutput] = useState("");
   const [version, setVersion] = useState("*");
@@ -63,14 +67,15 @@ const App = () => {
     }
   }, [])
 
-  const joinRoom = (e) => {
+
+  const joinRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (roomId && userName) {
       socket.emit("join", { roomId, userName });
       setJoined(true);
     }
   };
-
+  
   const leaveRoom = () => {
     socket.emit("leaveRoom");
     setJoined(false);
@@ -89,14 +94,15 @@ const App = () => {
   };
 
 
-  const handleCodeChange = (newCode) => {
-    setCode(newCode);
-    socket.emit("codeChange", { roomId, code: newCode });
-    socket.emit("typing", { roomId, userName });
-
+  const handleCodeChange = (newCode: string | undefined) => {
+    if (newCode) {
+      setCode(newCode);
+      socket.emit("codeChange", { roomId, code: newCode });
+      socket.emit("typing", { roomId, userName });
+    }
   };
 
-  const handleLanguageChange = (e) => {
+  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newLanguage = e.target.value;
     setLanguage(newLanguage);
     socket.emit("languageChange", { roomId, language: newLanguage });
@@ -193,10 +199,10 @@ const App = () => {
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-700/30 hover:bg-slate-800/50 transition-colors">
                 <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-xs font-semibold" key={index}>
-                    {user.charAt(0).toUpperCase()}
+                  <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-xs font-semibold">
+                    {user.name.charAt(0).toUpperCase()}
                   </div>
-                  <span className="text-slate-200 font-medium" key={index}>{user.slice(0, 8)}</span>
+                  <span className="text-slate-200 font-medium" key={index}>{user.name.slice(0, 8)}</span>
                 </div>
                 <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
               </div>
