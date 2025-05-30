@@ -196,13 +196,15 @@ const App: React.FC = () => {
         <div>
           <h3 className="text-sm font-medium text-slate-300 mb-3 uppercase tracking-wider">Active Users</h3>
           {users.map((user, index) => (
-            <div className="space-y-3">
+            <div key={index} className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-700/30 hover:bg-slate-800/50 transition-colors">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-xs font-semibold">
-                    {user.name.charAt(0).toUpperCase()}
+                    {user?.name?.charAt(0).toUpperCase() ?? '?'}
                   </div>
-                  <span className="text-slate-200 font-medium" key={index}>{user.name.slice(0, 8)}</span>
+                  <span className="text-slate-200 font-medium">
+                    {user?.name?.slice(0, 8) ?? 'Anonymous'}
+                  </span>
                 </div>
                 <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
               </div>
