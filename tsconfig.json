@@ -1,12 +1,11 @@
 {
-    "compilerOptions": {
-      "target": "ES2020",
-      "module": "NodeNext",
-      "rootDir": ".",
-      "outDir": "./dist",
-      "strict": true,
-      "esModuleInterop": true
-    },
-    "include": ["**/*.ts"],
-    "exclude": ["node_modules"]
-  }
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "NodeNext",
+    "rootDir": "./backend",
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true
+  },
+  "include": ["backend/**/*.ts"]
+}
