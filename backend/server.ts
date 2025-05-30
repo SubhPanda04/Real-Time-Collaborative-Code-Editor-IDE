@@ -13,7 +13,6 @@ interface Room {
 const app: Express = express();
 const server = http.createServer(app);
 
-// Define both incoming and outgoing socket events
 interface ServerToClientEvents {
   userJoined: (users: string[]) => void;
   codeUpdate: (code: string) => void;
@@ -66,7 +65,9 @@ io.on('connection', (socket) => {
 
     socket.emit("codeUpdate", rooms.get(roomId).code);
 
-    io.to(roomId).emit('userJoined', Array.from(rooms.get(currentRoom).users));
+    io.to(roomId).emit('userJoined', 
+Array.from(rooms.get(roomId).users)
+    );
   });
 
   socket.on('codeChange', ({ roomId, code }) => {

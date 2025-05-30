@@ -11,6 +11,10 @@ interface User {
   name: string;
 }
 
+socket.on("userJoined", (users: User[]) => {
+
+});
+
 const App: React.FC = () => {
 
   const [joined, setJoined] = useState(false);
