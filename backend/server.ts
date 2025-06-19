@@ -36,6 +36,22 @@ interface ClientToServerEvents {
   disconnect: () => void;
 }
 
+const url = process.env.VITE_SOCKET_URL || "http://localhost:5000";
+const interval = 30000;
+
+function reloadWebsite() {
+  axios
+    .get(url)
+    .then((response) => {
+      console.log("website reloaded");
+    })
+    .catch((error) => {
+      console.error(`Error : ${error.message}`);
+    });
+}
+
+setInterval(reloadWebsite, interval);
+
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
     origin: '*',
