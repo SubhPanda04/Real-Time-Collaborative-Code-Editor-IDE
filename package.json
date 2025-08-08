@@ -2,10 +2,9 @@
   "name": "real-time-collaborative-code-editor-ide",
   "version": "1.0.0",
   "main": "server.js",
-  "type": "module",
   "scripts": {
     "start": "node --loader ts-node/esm ./backend/server.ts",
-    "dev": "nodemon -e ts --exec node --loader ts-node/esm ./backend/server.ts",
+    "dev": "nodemon -e ts --exec npx ts-node ./backend/server.ts",
     "build": "npm install && tsc -p tsconfig.json && cd frontend && npm install && npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
