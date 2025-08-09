@@ -48,23 +48,10 @@ const VideoWindow: React.FC<VideoWindowProps> = ({
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [position, setPosition] = useState(() => {
-        if (externalPosition) {
-            return externalPosition;
-        }
-        // Calculate initial position to avoid overlap
-        const windowIndex = parseInt(userId.slice(-2), 16) % 10; // Use last 2 chars of ID for positioning
-        const baseX = 20;
-        const baseY = 20;
-        const spacing = 300; // Width of video window + margin
-        const rowHeight = 220; // Height of video window + margin
-        const windowsPerRow = Math.floor((window.innerWidth - 400) / spacing); // Account for sidebar
-
-        const row = Math.floor(windowIndex / windowsPerRow);
-        const col = windowIndex % windowsPerRow;
-
+        if (externalPosition) return externalPosition;
         return {
-            x: baseX + (col * spacing),
-            y: baseY + (row * rowHeight)
+            x: Math.random() * (window.innerWidth - 320),
+            y: Math.random() * (window.innerHeight - 240)
         };
     });
     const [isDragging, setIsDragging] = useState(false);
@@ -77,114 +64,91 @@ const VideoWindow: React.FC<VideoWindowProps> = ({
         }
     }, [externalPosition, isDragging]);
 
+    // Set video stream
     useEffect(() => {
         if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
 
-            // Add event listeners to track video element state
-            const videoElement = videoRef.current;
-
-            const handleLoadedMetadata = () => {
-                // Try to play the video manually if autoplay fails
-                videoElement.play().catch(error => {
-                    // Silently handle autoplay failure - common in browsers
-                });
+            // Ensure the video plays
+            const playVideo = async () => {
+                try {
+                    const videoElement = videoRef.current;
+                    if (videoElement && videoElement.isConnected) {
+                        await videoElement.play();
+                    }
+                } catch (error) {
+                    // Only log non-abort errors to reduce noise
+                    if (error instanceof DOMException && error.name !== 'AbortError') {
+                        console.error(`❌ Error playing video for ${userName}:`, error);
+                    }
+                }
             };
 
-            const handleError = (e: Event) => {
-                console.error(`Video error for ${userName}:`, e);
-            };
+            // Add a small delay to ensure the element is properly mounted
+            const timeoutId = setTimeout(playVideo, 100);
 
-            const handleCanPlay = () => {
-                // Ensure video plays when it's ready
-                videoElement.play().catch(error => {
-                    // Silently handle autoplay failure - common in browsers
-                });
-            };
-
-            videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-            videoElement.addEventListener('error', handleError);
-            videoElement.addEventListener('canplay', handleCanPlay);
-
-            return () => {
-                videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-                videoElement.removeEventListener('error', handleError);
-                videoElement.removeEventListener('canplay', handleCanPlay);
-            };
+            return () => clearTimeout(timeoutId);
         }
     }, [stream, userName]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        // Allow dragging any video window by anyone in the room
-        setIsDragging(true);
-        const rect = e.currentTarget.getBoundingClientRect();
-        setDragOffset({
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top,
-        });
+        if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('drag-handle')) {
+            setIsDragging(true);
+            setDragOffset({
+                x: e.clientX - position.x,
+                y: e.clientY - position.y
+            });
+        }
     };
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (isDragging) { // Allow moving any video window
-            const newX = Math.max(0, Math.min(window.innerWidth - 280, e.clientX - dragOffset.x));
-            const newY = Math.max(0, Math.min(window.innerHeight - 210, e.clientY - dragOffset.y));
-
-            const newPosition = { x: newX, y: newY };
+        if (isDragging) {
+            const newPosition = {
+                x: Math.max(0, Math.min(window.innerWidth - 320, e.clientX - dragOffset.x)),
+                y: Math.max(0, Math.min(window.innerHeight - 240, e.clientY - dragOffset.y))
+            };
             setPosition(newPosition);
-
-            // Notify parent component about position change for synchronization
-            if (onPositionChange) {
-                onPositionChange(userId, newPosition);
-            }
+            onPositionChange?.(userId, newPosition);
         }
-    }, [isDragging, dragOffset, userId, onPositionChange, isLocal, userName]);
+    }, [isDragging, dragOffset, userId, onPositionChange]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
-    }, []); useEffect(() => {
+    }, []);
+
+    useEffect(() => {
         if (isDragging) {
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
+            return () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+            };
         }
-
-        return () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
     }, [isDragging, handleMouseMove, handleMouseUp]);
 
     return (
         <div
-            className={`fixed bg-slate-800 rounded-lg overflow-hidden shadow-2xl border-2 z-50 ${isDragging
-                ? 'cursor-grabbing border-blue-400'
-                : 'cursor-grab border-slate-600 hover:border-slate-500'
-                }`}
+            className="fixed bg-slate-800 rounded-lg shadow-2xl border border-slate-600 overflow-hidden z-50"
             style={{
                 left: position.x,
                 top: position.y,
-                width: '280px',
-                height: '210px',
+                width: '320px',
+                height: '240px',
+                cursor: isDragging ? 'grabbing' : 'grab'
             }}
+            onMouseDown={handleMouseDown}
         >
-            <div
-                className="flex items-center justify-between p-3 bg-slate-700 cursor-move hover:bg-slate-600 transition-colors"
-                onMouseDown={handleMouseDown}
-            >
+            {/* Header */}
+            <div className="drag-handle bg-slate-700 px-3 py-2 flex items-center justify-between cursor-grab">
                 <div className="flex items-center space-x-2">
                     <Move className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm font-medium text-white truncate">
-                        {isLocal ? 'You' : userName}
-                    </span>
-                    <span className="text-xs text-slate-400">(movable)</span>
+                    <span className="text-sm font-medium text-white">{userName}</span>
                 </div>
                 <div className="flex items-center space-x-1">
-                    {!isVideoEnabled && (
-                        <VideoOff className="w-4 h-4 text-red-400" />
-                    )}
-                    {!isAudioEnabled && (
-                        <MicOff className="w-4 h-4 text-red-400" />
-                    )}
-                    {onClose && (
+                    {!isAudioEnabled && <MicOff className="w-4 h-4 text-red-400" />}
+                    {!isVideoEnabled && <VideoOff className="w-4 h-4 text-red-400" />}
+                    {isLocal && onClose && (
                         <button
                             onClick={onClose}
                             className="p-1 hover:bg-slate-600 rounded transition-colors"
@@ -194,14 +158,23 @@ const VideoWindow: React.FC<VideoWindowProps> = ({
                     )}
                 </div>
             </div>
-            <div className="relative h-40 bg-slate-900">
+
+            {/* Video content */}
+            <div className="h-48 relative">
                 {isVideoEnabled && stream ? (
                     <video
                         ref={videoRef}
                         autoPlay
                         playsInline
                         muted={isLocal}
-                        className="w-full h-full object-cover"
+                        controls={false}
+                        className="w-full h-full object-cover bg-black"
+                        onError={(e) => {
+                            const target = e.target as HTMLVideoElement;
+                            if (target.error) {
+                                console.error(`❌ Video error for ${userName}:`, target.error.message);
+                            }
+                        }}
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center bg-slate-900">
@@ -247,15 +220,12 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
         localStreamRef.current = localStream;
     }, [localStream]);
 
-    const iceServers = {
+    const iceServers = React.useMemo(() => ({
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
         ],
-    };
+    }), []);
 
     // Initialize local media stream
     const initializeMedia = async () => {
@@ -275,13 +245,37 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
             });
 
             setLocalStream(stream);
+            localStreamRef.current = stream;
             return stream;
         } catch (error) {
-            console.error('Error accessing media devices:', error);
+            console.error('❌ Error accessing media devices:', error);
             return null;
         }
-    };    // Create peer connection
-    const createPeerConnection = useCallback((userId: string, userName: string, isInitiator: boolean) => {
+    };
+
+    // Utility function to ensure all local tracks are properly added
+    const ensureTracksAreAdded = useCallback((peerConnection: RTCPeerConnection, userName: string) => {
+        if (!localStreamRef.current) {
+            return;
+        }
+
+        const localTracks = localStreamRef.current.getTracks();
+        const senders = peerConnection.getSenders();
+
+        localTracks.forEach(track => {
+            const existingSender = senders.find(s => s.track && s.track.kind === track.kind);
+
+            if (!existingSender) {
+                peerConnection.addTrack(track, localStreamRef.current!);
+            } else if (existingSender.track !== track) {
+                existingSender.replaceTrack(track);
+            }
+        });
+
+        // Verify final state
+        const finalSenders = peerConnection.getSenders().filter(s => s.track);
+    }, []);    // Create peer connection
+    const createPeerConnection = useCallback((userId: string, userName: string, isInitiator: boolean = false) => {
         const peerConnection = new RTCPeerConnection(iceServers);
 
         peerConnection.onicecandidate = (event) => {
@@ -297,33 +291,74 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
         peerConnection.ontrack = (event) => {
             const [remoteStream] = event.streams;
             if (remoteStream) {
+                // Ensure we have both audio and video tracks
+                const audioTracks = remoteStream.getAudioTracks();
+                const videoTracks = remoteStream.getVideoTracks();
+
+
+                // Log track details for debugging
+                audioTracks.forEach(track => );
+                videoTracks.forEach(track => );
+
                 setRemoteStreams(prev => {
                     const newMap = new Map(prev);
+                    const existingStream = newMap.get(userId);
+                    if (existingStream) {
+
+                    }
                     newMap.set(userId, remoteStream);
+
                     return newMap;
                 });
             } else {
-                console.error(`No remote stream in ontrack event for ${userName}`);
+                console.error(`❌ No remote stream received from ${userName}`);
             }
         };
 
         peerConnection.onconnectionstatechange = () => {
-            if (peerConnection.connectionState === 'failed') {
-                // Connection failed - could retry or handle gracefully
-            }
-        };
 
-        peerConnection.oniceconnectionstatechange = () => {
+
+            if (peerConnection.connectionState === 'failed') {
+
+                // Try to restart the ICE connection
+                peerConnection.restartIce();
+
+                // Re-add local tracks if they're missing
+                setTimeout(() => {
+                    if (localStreamRef.current && peerConnection.connectionState === 'failed') {
+
+                        ensureTracksAreAdded(peerConnection, userName);
+                    }
+                }, 1000);
+            } else if (peerConnection.connectionState === 'disconnected') {
+
+                // Wait a bit before attempting restart
+                setTimeout(() => {
+                    if (peerConnection.connectionState === 'disconnected') {
+
+                        peerConnection.restartIce();
+
+                        // Re-add local tracks if they're missing
+                        if (localStreamRef.current) {
+
+                            ensureTracksAreAdded(peerConnection, userName);
+                        }
+                    }
+                }, 5000);
+            }
+        }; peerConnection.oniceconnectionstatechange = () => {
+
+
             if (peerConnection.iceConnectionState === 'failed') {
-                // ICE connection failed - could attempt reconnection
+
+                peerConnection.restartIce();
             }
         };
 
         // Add local stream tracks if available
         if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStreamRef.current!);
-            });
+
+            ensureTracksAreAdded(peerConnection, userName);
         }
 
         const newPeerConnection: PeerConnection = {
@@ -332,17 +367,16 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
             peerConnection,
         };
 
-        setPeerConnections(prev => {
-            const newMap = new Map(prev);
-            newMap.set(userId, newPeerConnection);
-            return newMap;
-        });
+        // Update the ref immediately
+        peerConnectionsRef.current.set(userId, newPeerConnection);
+        setPeerConnections(prev => new Map(prev.set(userId, newPeerConnection)));
 
         return peerConnection;
-    }, [socket, roomId, iceServers]);
+    }, [socket, roomId, iceServers, ensureTracksAreAdded]);
 
-    const createOffer = async (peerConnection: RTCPeerConnection, targetUserId: string) => {
+    const createOffer = useCallback(async (peerConnection: RTCPeerConnection, targetUserId: string) => {
         try {
+
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
 
@@ -351,13 +385,15 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
                 offer,
                 targetUserId,
             });
-        } catch (error) {
-            console.error('Error creating offer:', error);
-        }
-    };
 
-    const createAnswer = async (peerConnection: RTCPeerConnection, offer: RTCSessionDescriptionInit, targetUserId: string) => {
+        } catch (error) {
+            console.error(`❌ Error creating offer for ${targetUserId}:`, error);
+        }
+    }, [socket, roomId]);
+
+    const createAnswer = useCallback(async (peerConnection: RTCPeerConnection, offer: RTCSessionDescriptionInit, targetUserId: string) => {
         try {
+
             await peerConnection.setRemoteDescription(offer);
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
@@ -367,368 +403,315 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
                 answer,
                 targetUserId,
             });
+
         } catch (error) {
-            console.error('Error creating answer:', error);
+            console.error(`❌ Error creating answer for ${targetUserId}:`, error);
         }
-    };
+    }, [socket, roomId]);
 
-    // Disabled - problematic effect that tries to add tracks to existing connections
-    // This was causing InvalidStateError when peer connections were closed
-    /*
-    useEffect(() => {
-        if (localStream && peerConnections.size > 0) {
-            peerConnections.forEach((peer, userId) => {
-                // Check if peer connection is still open
-                if (peer.peerConnection.connectionState === 'closed' ||
-                    peer.peerConnection.signalingState === 'closed') {
-                    return;
-                }
-
-                // Check if tracks are already added
-                const senders = peer.peerConnection.getSenders();
-                const hasVideoTrack = senders.some(sender => sender.track?.kind === 'video');
-                const hasAudioTrack = senders.some(sender => sender.track?.kind === 'audio');
-
-                if (!hasVideoTrack || !hasAudioTrack) {
-                    // Add missing tracks
-                    localStream.getTracks().forEach(track => {
-                        const trackExists = senders.some(sender => sender.track === track);
-                        if (!trackExists) {
-                            try {
-                                peer.peerConnection.addTrack(track, localStream);
-                            } catch (error) {
-                                console.error(`❌ Failed to add ${track.kind} track to ${peer.name}:`, error);
-                            }
-                        }
-                    });
-
-                    // Create new offer since we added tracks
-                    createOffer(peer.peerConnection, userId);
-                }
-            });
-        }
-    }, [localStream]);
-    */
-
-    // Create peer connections for users who were detected before we had a local stream
-    useEffect(() => {
-        if (localStream && remoteVideoStates.size > 0) {
-            remoteVideoStates.forEach((isVideoEnabled, userId) => {
-                if (isVideoEnabled && !peerConnectionsRef.current.has(userId)) {
-                    const user = users.find(u => u.id === userId);
-                    if (user) {
-                        setPeerConnections(prev => {
-                            if (!prev.has(userId)) {
-                                const peerConnection = createPeerConnection(userId, user.name, true);
-
-                                // Create offer after peer connection is set up
-                                setTimeout(() => {
-                                    createOffer(peerConnection, userId);
-                                }, 200);
-
-                                return new Map(prev.set(userId, {
-                                    id: userId,
-                                    name: user.name,
-                                    peerConnection
-                                }));
-                            }
-                            return prev;
-                        });
-                    }
-                }
-            });
-        }
-    }, [localStream]);
-
-    // Disabled - redundant effect since we now create offers directly in event handlers
-    /*
-    useEffect(() => {
-        if (localStream) {
-            const currentPeerConnections = peerConnectionsRef.current;
-            currentPeerConnections.forEach((peer, userId) => {
-                // Check if peer connection is still open
-                if (peer.peerConnection.connectionState === 'closed' || 
-                    peer.peerConnection.signalingState === 'closed') {
-                    return;
-                }
-
-                const senders = peer.peerConnection.getSenders();
-                if (senders.length === 0) {
-                    // This is a new peer connection, add tracks
-                    localStream.getTracks().forEach(track => {
-                        try {
-                            peer.peerConnection.addTrack(track, localStream);
-                        } catch (error) {
-                            console.error(`❌ Failed to add ${track.kind} track to new peer connection for ${peer.name}:`, error);
-                        }
-                    });
-
-                    // Create offer for initiator
-                    setTimeout(() => createOffer(peer.peerConnection, userId), 100);
-                }
-            });
-        }
-    }, [localStream]);
-    */    // Handle position changes
+    // Handle position changes
     const handlePositionChange = useCallback((userId: string, position: { x: number; y: number }) => {
-        // Update local position state for any user
-        setVideoPositions(prev => new Map(prev.set(userId, position)));
 
-        // Always broadcast position changes to other users when anyone moves any video window
+        setVideoPositions(prev => new Map(prev.set(userId, position)));
         socket.emit('video-position-change', {
             roomId,
-            userId, // Include the userId to specify which video window was moved
+            userId,
             position,
         });
     }, [socket, roomId]);
 
-    // Socket event handlers
-    useEffect(() => {
-        const handleUserJoinedVideo = ({ userId, userName, position }: { userId: string; userName: string; position?: { x: number; y: number } }) => {
-            if (userId !== currentUserId) {
-                setRemoteVideoStates(prev => new Map(prev.set(userId, true)));
-                setRemoteAudioStates(prev => new Map(prev.set(userId, true)));
+    // Event handlers defined outside useEffect to avoid circular dependencies
+    const handleUserJoinedVideo = useCallback(({ userId, userName, position }: { userId: string; userName: string; position?: { x: number; y: number } }) => {
 
-                // Set initial position if provided
-                if (position) {
-                    setVideoPositions(prev => new Map(prev.set(userId, position)));
-                }
-
-                // Only create peer connection if we have a local stream
-                if (localStreamRef.current) {
-                    setPeerConnections(prev => {
-                        if (!prev.has(userId)) {
-                            const peerConnection = createPeerConnection(userId, userName, true);
-
-                            // Wait longer before creating offer to ensure peer is ready
-                            setTimeout(() => {
-                                createOffer(peerConnection, userId);
-                            }, 500);
-
-                            return new Map(prev.set(userId, {
-                                id: userId,
-                                name: userName,
-                                peerConnection
-                            }));
-                        }
-                        return prev;
-                    });
-                }
+        if (userId !== currentUserId) {
+            setRemoteVideoStates(prev => new Map(prev.set(userId, true)));
+            setRemoteAudioStates(prev => new Map(prev.set(userId, true)));
+            if (position) {
+                setVideoPositions(prev => new Map(prev.set(userId, position)));
             }
-        }; const handleExistingVideoUsers = (videoUsers: { userId: string; userName: string; position: { x: number; y: number } }[]) => {
-            videoUsers.forEach(({ userId, userName, position }) => {
-                if (userId !== currentUserId) {
-                    setRemoteVideoStates(prev => new Map(prev.set(userId, true)));
-                    setRemoteAudioStates(prev => new Map(prev.set(userId, true)));
-                    setVideoPositions(prev => new Map(prev.set(userId, position)));
 
-                    // Only create peer connection if we have a local stream
-                    if (localStreamRef.current) {
-                        setPeerConnections(prev => {
-                            if (!prev.has(userId)) {
-                                const peerConnection = createPeerConnection(userId, userName, true);
-
-                                // Wait longer before creating offer to ensure peer is ready
-                                setTimeout(() => {
-                                    createOffer(peerConnection, userId);
-                                }, 500);
-
-                                return new Map(prev.set(userId, {
-                                    id: userId,
-                                    name: userName,
-                                    peerConnection
-                                }));
-                            }
-                            return prev;
-                        });
-                    }
-                }
-            });
-        };
-
-        const handleOffer = async ({ offer, fromUserId, fromUserName }: { offer: RTCSessionDescriptionInit; fromUserId: string; fromUserName: string }) => {
-            setPeerConnections(prev => {
-                let peerConnection: RTCPeerConnection;
-
-                if (!prev.has(fromUserId)) {
-                    peerConnection = createPeerConnection(fromUserId, fromUserName, false);
-                    const newMap = new Map(prev.set(fromUserId, {
-                        id: fromUserId,
-                        name: fromUserName,
-                        peerConnection
-                    }));
-
-                    // Create answer after a small delay to ensure everything is set up
-                    setTimeout(() => {
-                        createAnswer(peerConnection, offer, fromUserId);
-                    }, 100);
-                    return newMap;
-                } else {
-                    const existingPeer = prev.get(fromUserId)!;
-                    createAnswer(existingPeer.peerConnection, offer, fromUserId);
-                    return prev;
-                }
-            });
-        };
-
-        socket.on('user-joined-video', handleUserJoinedVideo);
-        socket.on('existing-video-users', handleExistingVideoUsers);
-        socket.on('offer', handleOffer);
-
-        socket.on('video-position-update', ({ userId, position }) => {
-            setVideoPositions(prev => new Map(prev.set(userId, position)));
-        });
-
-        socket.on('answer', async ({ answer, fromUserId }) => {
-            setPeerConnections(prev => {
-                const peer = prev.get(fromUserId);
-                if (peer) {
-                    peer.peerConnection.setRemoteDescription(answer).catch(error => {
-                        console.error('Error setting remote description for answer:', error);
-                    });
-                } else {
-                    console.error(`No peer connection found for answer from ${fromUserId}`);
-                }
-                return prev;
-            });
-        });
-
-        socket.on('ice-candidate', async ({ candidate, fromUserId }) => {
-            setPeerConnections(prev => {
-                const peer = prev.get(fromUserId);
-                if (peer) {
-                    peer.peerConnection.addIceCandidate(candidate).catch(error => {
-                        console.error('Error adding ICE candidate:', error);
-                    });
-                } else {
-                    console.error(`No peer connection found for ICE candidate from ${fromUserId}`);
-                }
-                return prev;
-            });
-        });
-
-        socket.on('user-left-video', ({ userId }) => {
-            setPeerConnections(prev => {
-                const peer = prev.get(userId);
-                if (peer) {
-                    peer.peerConnection.close();
-                    const newMap = new Map(prev);
-                    newMap.delete(userId);
-                    return newMap;
-                }
-                return prev;
-            });
-
+            // Clear any existing remote stream for this user first
             setRemoteStreams(prev => {
                 const newMap = new Map(prev);
                 newMap.delete(userId);
                 return newMap;
             });
-            setRemoteVideoStates(prev => {
-                const newMap = new Map(prev);
-                newMap.delete(userId);
-                return newMap;
-            });
-            setRemoteAudioStates(prev => {
-                const newMap = new Map(prev);
-                newMap.delete(userId);
-                return newMap;
-            });
-            setVideoPositions(prev => {
-                const newMap = new Map(prev);
-                newMap.delete(userId);
-                return newMap;
-            });
-        });
 
-        socket.on('video-toggle', ({ userId, isVideoEnabled: videoEnabled }) => {
-            setRemoteVideoStates(prev => new Map(prev.set(userId, videoEnabled)));
-        });
+            // Check if we already have a peer connection
+            const existingPeer = peerConnectionsRef.current.get(userId);
 
-        socket.on('audio-toggle', ({ userId, isAudioEnabled: audioEnabled }) => {
-            setRemoteAudioStates(prev => new Map(prev.set(userId, audioEnabled)));
+            if (existingPeer) {
+
+                const state = existingPeer.peerConnection.connectionState;
+
+
+                // Always close and recreate connection for rejoining users to ensure clean state
+
+                existingPeer.peerConnection.close();
+                peerConnectionsRef.current.delete(userId);
+                setPeerConnections(prev => {
+                    const newMap = new Map(prev);
+                    newMap.delete(userId);
+                    return newMap;
+                });
+            }
+
+            // Create peer connection if we have local stream
+            if (localStreamRef.current) {
+
+                const peerConnection = createPeerConnection(userId, userName, true);
+                setTimeout(() => {
+
+                    createOffer(peerConnection, userId);
+                }, 500);
+            } else {
+
+            }
+        }
+    }, [currentUserId, createPeerConnection, createOffer]); const handleExistingVideoUsers = useCallback((videoUsers: { userId: string; userName: string; position: { x: number; y: number } }[]) => {
+
+        videoUsers.forEach(({ userId, userName, position }) => {
+            if (userId !== currentUserId) {
+                setRemoteVideoStates(prev => new Map(prev.set(userId, true)));
+                setRemoteAudioStates(prev => new Map(prev.set(userId, true)));
+                setVideoPositions(prev => new Map(prev.set(userId, position)));
+
+                if (localStreamRef.current && !peerConnectionsRef.current.has(userId)) {
+                    const peerConnection = createPeerConnection(userId, userName, true);
+                    setTimeout(() => createOffer(peerConnection, userId), 700);
+                }
+            }
         });
+    }, [currentUserId, createPeerConnection, createOffer]);
+
+    const handleOffer = useCallback(async ({ offer, fromUserId, fromUserName }: { offer: RTCSessionDescriptionInit; fromUserId: string; fromUserName: string }) => {
+        
+        );
+
+    const existingPeer = peerConnectionsRef.current.get(fromUserId);
+
+    if (!existingPeer) {
+
+        const peerConnection = createPeerConnection(fromUserId, fromUserName, false);
+
+        setTimeout(() => {
+
+            createAnswer(peerConnection, offer, fromUserId);
+        }, 100);
+    } else {
+        // For rejoining users, always handle the offer to ensure fresh connection
+
+
+
+
+
+        try {
+            // Close existing connection and create fresh one for better reliability
+
+            existingPeer.peerConnection.close();
+            peerConnectionsRef.current.delete(fromUserId);
+            setPeerConnections(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(fromUserId);
+                return newMap;
+            });
+
+            // Create fresh peer connection
+            const peerConnection = createPeerConnection(fromUserId, fromUserName, false);
+            setTimeout(() => {
+
+                createAnswer(peerConnection, offer, fromUserId);
+            }, 100);
+        } catch (error) {
+            console.error(`❌ Error handling offer for existing connection:`, error);
+        }
+    }
+}, [createPeerConnection, createAnswer]); const handleAnswer = useCallback(async ({ answer, fromUserId }: { answer: RTCSessionDescriptionInit; fromUserId: string }) => {
+
+    const peer = peerConnectionsRef.current.get(fromUserId);
+    if (peer) {
+        try {
+            await peer.peerConnection.setRemoteDescription(answer);
+
+        } catch (error) {
+            console.error(`❌ Error processing answer:`, error);
+        }
+    }
+}, []);
+
+const handleIceCandidate = useCallback(async ({ candidate, fromUserId }: { candidate: RTCIceCandidate; fromUserId: string }) => {
+    const peer = peerConnectionsRef.current.get(fromUserId);
+    if (peer && peer.peerConnection.remoteDescription) {
+        try {
+            await peer.peerConnection.addIceCandidate(candidate);
+
+        } catch (error) {
+            console.error(`❌ Error adding ICE candidate:`, error);
+        }
+    } else {
+        `);
+        }
+    }, []);
+
+    const handleUserLeftVideo = useCallback(({ userId }: { userId: string }) => {
+        
+        const peer = peerConnectionsRef.current.get(userId);
+        if (peer) {
+            peer.peerConnection.close();
+            peerConnectionsRef.current.delete(userId);
+            setPeerConnections(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(userId);
+                return newMap;
+            });
+        }
+
+        setRemoteStreams(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(userId);
+            return newMap;
+        });
+        setRemoteVideoStates(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(userId);
+            return newMap;
+        });
+        setRemoteAudioStates(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(userId);
+            return newMap;
+        });
+        setVideoPositions(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(userId);
+            return newMap;
+        });
+    }, []);
+
+    const handleVideoPositionUpdate = useCallback(({ userId, position }) => {
+        
+        setVideoPositions(prev => new Map(prev.set(userId, position)));
+    }, []);
+
+    const handleVideoToggle = useCallback(({ userId, isVideoEnabled }) => {
+        setRemoteVideoStates(prev => new Map(prev.set(userId, isVideoEnabled)));
+    }, []);
+
+    const handleAudioToggle = useCallback(({ userId, isAudioEnabled }) => {
+        setRemoteAudioStates(prev => new Map(prev.set(userId, isAudioEnabled)));
+    }, []);
+
+    // Socket event handlers setup
+    useEffect(() => {
+        
+        
+        
+
+        // Register socket events
+        socket.on('user-joined-video', handleUserJoinedVideo);
+        socket.on('existing-video-users', handleExistingVideoUsers);
+        socket.on('offer', handleOffer);
+        socket.on('answer', handleAnswer);
+        socket.on('ice-candidate', handleIceCandidate);
+        socket.on('user-left-video', handleUserLeftVideo);
+
+        socket.on('video-position-update', handleVideoPositionUpdate);
+        socket.on('video-toggle', handleVideoToggle);
+        socket.on('audio-toggle', handleAudioToggle);
 
         return () => {
             socket.off('user-joined-video', handleUserJoinedVideo);
             socket.off('existing-video-users', handleExistingVideoUsers);
             socket.off('offer', handleOffer);
-            socket.off('video-position-update');
-            socket.off('answer');
-            socket.off('ice-candidate');
-            socket.off('user-left-video');
-            socket.off('video-toggle');
-            socket.off('audio-toggle');
+            socket.off('answer', handleAnswer);
+            socket.off('ice-candidate', handleIceCandidate);
+            socket.off('user-left-video', handleUserLeftVideo);
+            socket.off('video-position-update', handleVideoPositionUpdate);
+            socket.off('video-toggle', handleVideoToggle);
+            socket.off('audio-toggle', handleAudioToggle);
         };
-    }, [socket, currentUserId, createPeerConnection]);
+    }, [socket]); // Only depend on socket - handlers are stable with useCallback
 
-    // Handle when new users join the room while video is enabled
+    // Main video initialization effect - ONLY run when isVideoEnabled changes
     useEffect(() => {
-        if (isVideoEnabled && localStream) {
-            // Check if any new users have joined and need video connections
-            users.forEach(user => {
-                if (user.id !== currentUserId && !peerConnectionsRef.current.has(user.id)) {
-                    // Check if this user has video enabled
-                    socket.emit('check-video-user', { roomId, userId: user.id });
-                }
-            });
-        }
-    }, [users, isVideoEnabled, localStream, currentUserId, roomId, socket]);
+        
 
-    // Initialize video conference
-    useEffect(() => {
         if (isVideoEnabled) {
-            // First, ensure we clean up any existing connections
+            
+
+            // Clean up any existing connections
             peerConnectionsRef.current.forEach(peer => peer.peerConnection.close());
+            peerConnectionsRef.current.clear();
             setPeerConnections(new Map());
             setRemoteStreams(new Map());
 
             initializeMedia().then(stream => {
                 if (stream) {
-                    // Emit join-video after local stream is ready
-                    socket.emit('join-video', { roomId });
+                    
+                    ));
+                    
+                    
 
-                    // Wait for the server to process the join-video event
+                    socket.emit('join-video', { roomId });
+                    
+
+                    // Also check for existing users in the room who might already have video enabled
                     setTimeout(() => {
-                        // Check for existing video users
+                        
                         users.forEach(user => {
                             if (user.id !== currentUserId) {
-                                socket.emit('check-video-user', { roomId, userId: user.id });
+                                `);
+// This will trigger the backend to check if they have video enabled
+socket.emit('check-video-user', { roomId, userId: user.id });
                             }
                         });
-                    }, 1000); // Increased delay to ensure server processing
-                } else {
-                    console.error('Failed to obtain local media stream');
+                    }, 1000);
                 }
             });
         } else {
-            // Stop local stream
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                setLocalStream(null);
-            }
 
-            // Close all peer connections
-            peerConnectionsRef.current.forEach(peer => peer.peerConnection.close());
-            setPeerConnections(new Map());
-            setRemoteStreams(new Map());
-            setRemoteVideoStates(new Map());
-            setRemoteAudioStates(new Map());
-            setVideoPositions(new Map());
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        setLocalStream(null);
+        localStreamRef.current = null;
+    }
 
-            socket.emit('leave-video', { roomId });
+    peerConnectionsRef.current.forEach(peer => peer.peerConnection.close());
+    peerConnectionsRef.current.clear();
+    setPeerConnections(new Map());
+    setRemoteStreams(new Map());
+    setRemoteVideoStates(new Map());
+    setRemoteAudioStates(new Map());
+    setVideoPositions(new Map());
+
+    socket.emit('leave-video', { roomId });
+}
+
+return () => {
+    if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    peerConnectionsRef.current.forEach(peer => peer.peerConnection.close());
+};
+    }, [isVideoEnabled]); // Only depend on isVideoEnabled to prevent infinite renders
+
+// Effect to handle new users joining when video is already enabled
+useEffect(() => {
+    if (isVideoEnabled && localStreamRef.current) {
+        const currentUserIds = new Set(users.map(u => u.id));
+        const existingConnectionIds = new Set(peerConnectionsRef.current.keys());
+
+        // Find users who don't have peer connections yet
+        users.forEach(user => {
+            if (user.id !== currentUserId && !existingConnectionIds.has(user.id)) {
+                    , checking for video`);
+                    socket.emit('check-video-user', { roomId, userId: user.id });
+                }
+            });
         }
+    }, [users.length, isVideoEnabled]); // Only depend on users.length to reduce re-renders
 
-        return () => {
-            const currentLocalStream = localStreamRef.current;
-            const currentPeerConnections = peerConnectionsRef.current;
-
-            if (currentLocalStream) {
-                currentLocalStream.getTracks().forEach(track => track.stop());
-            }
-            currentPeerConnections.forEach(peer => peer.peerConnection.close());
-        };
-    }, [isVideoEnabled, roomId, socket]); const toggleAudio = () => {
+    const toggleAudio = () => {
         if (localStream) {
             const audioTrack = localStream.getAudioTracks()[0];
             if (audioTrack) {
@@ -743,30 +726,18 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
         }
     };
 
-    const handleVideoToggle = () => {
+    const toggleLocalVideo = () => {
         if (localStream) {
             const videoTrack = localStream.getVideoTracks()[0];
             if (videoTrack) {
-                const newVideoState = !videoTrack.enabled;
-                videoTrack.enabled = newVideoState;
+                videoTrack.enabled = !videoTrack.enabled;
 
                 socket.emit('video-toggle', {
                     roomId,
-                    isVideoEnabled: newVideoState,
+                    isVideoEnabled: videoTrack.enabled,
                 });
             }
         }
-
-        if (!isVideoEnabled) {
-            // If turning video on, make sure we have a stream
-            initializeMedia().then(stream => {
-                if (stream) {
-                    setLocalStream(stream);
-                }
-            });
-        }
-
-        onToggleVideo();
     };
 
     const handleCloseVideo = () => {
@@ -775,6 +746,11 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
 
     if (!isVideoEnabled) {
         return null;
+    }
+
+    // Only log once when streams or connections change
+    if (peerConnections.size > 0) {
+        
     }
 
     return (
@@ -800,46 +776,47 @@ const VideoConference: React.FC<VideoConferenceProps> = ({
                 const isRemoteAudioEnabled = remoteAudioStates.get(userId) ?? true;
                 const position = videoPositions.get(userId);
 
+                if (!user) return null;
+
                 return (
                     <VideoWindow
                         key={userId}
                         userId={userId}
-                        userName={user?.name || 'Unknown'}
+                        userName={user.name}
                         stream={stream}
+                        isLocal={false}
                         isVideoEnabled={isRemoteVideoEnabled}
                         isAudioEnabled={isRemoteAudioEnabled}
                         position={position}
                         onPositionChange={handlePositionChange}
                     />
                 );
-            })}            {/* Video controls */}
-            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 flex items-center space-x-4 bg-slate-800/90 backdrop-blur-sm rounded-full px-6 py-3 border border-slate-600 z-50">
+            })}
+
+            {/* Audio and End Call Controls - Bottom Middle */}
+            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 flex space-x-4 bg-slate-800/90 backdrop-blur-sm rounded-full px-6 py-3 shadow-2xl z-50">
                 <button
-                    onClick={handleVideoToggle}
-                    className={`p-3 rounded-full transition-all duration-200 ${isVideoEnabled
-                        ? 'bg-slate-700 hover:bg-slate-600 text-white'
-                        : 'bg-red-600 hover:bg-red-700 text-white'
-                        }`}
+                    onClick={toggleAudio}
+                    className={`p - 4 rounded - full transition - colors ${
+                    isAudioEnabled
+                        ? 'bg-green-600 hover:bg-green-700'
+                        : 'bg-red-600 hover:bg-red-700'
+                } `}
+                    title={isAudioEnabled ? 'Mute Audio' : 'Unmute Audio'}
                 >
-                    {isVideoEnabled ? (
-                        <Video className="w-5 h-5" />
+                    {isAudioEnabled ? (
+                        <Mic className="w-6 h-6 text-white" />
                     ) : (
-                        <VideoOff className="w-5 h-5" />
+                        <MicOff className="w-6 h-6 text-white" />
                     )}
                 </button>
 
                 <button
-                    onClick={toggleAudio}
-                    className={`p-3 rounded-full transition-all duration-200 ${isAudioEnabled
-                        ? 'bg-slate-700 hover:bg-slate-600 text-white'
-                        : 'bg-red-600 hover:bg-red-700 text-white'
-                        }`}
+                    onClick={handleCloseVideo}
+                    className="p-4 rounded-full bg-red-600 hover:bg-red-700 transition-colors"
+                    title="End Call"
                 >
-                    {isAudioEnabled ? (
-                        <Mic className="w-5 h-5" />
-                    ) : (
-                        <MicOff className="w-5 h-5" />
-                    )}
+                    <X className="w-6 h-6 text-white" />
                 </button>
             </div>
         </>
