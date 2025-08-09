@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import './App.css';
 import io from "socket.io-client";
 import Editor from '@monaco-editor/react';
-import { Code2, Users, ArrowRight, Shield } from 'lucide-react';
+import { Code2, Users, ArrowRight, Shield, Video, VideoOff } from 'lucide-react';
+import VideoConference from './components/VideoConference';
 
 const socket = io("https://real-time-collaborative-code-editor-ide.onrender.com");
 
@@ -28,6 +29,8 @@ const App: React.FC = () => {
   const [output, setOutput] = useState("");
   const [version, setVersion] = useState("*");
   const [input, setInput] = useState("");
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
 
   useEffect(() => {
     socket.on("userJoined", (users) => {
@@ -49,7 +52,12 @@ const App: React.FC = () => {
 
     socket.on("codeResponse", (response) => {
       setOutput(response.run.output)
-    })
+    });
+
+    // Set current user ID when joining
+    socket.on("userIdAssigned", (userId) => {
+      setCurrentUserId(userId);
+    });
 
     return () => {
       socket.off("userJoined");
@@ -57,6 +65,7 @@ const App: React.FC = () => {
       socket.off("userTyping");
       socket.off("languageUpdate");
       socket.off("codeResponse");
+      socket.off("userIdAssigned");
     }
   }, []);
 
@@ -79,7 +88,7 @@ const App: React.FC = () => {
       setJoined(true);
     }
   };
-  
+
   const leaveRoom = () => {
     socket.emit("leaveRoom");
     setJoined(false);
@@ -87,7 +96,12 @@ const App: React.FC = () => {
     setUserName("");
     setCode("// Start code here");
     setLanguage("javascript");
+    setIsVideoEnabled(false);
   }
+
+  const toggleVideo = () => {
+    setIsVideoEnabled(!isVideoEnabled);
+  };
 
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId)
@@ -237,6 +251,21 @@ const App: React.FC = () => {
             <option value="cpp">C++</option>
           </select>
         </div>
+
+        <div className="space-y-3">
+          <h3 className="text-xs font-medium text-slate-300 mb-2 uppercase tracking-wider">Video Conference</h3>
+
+          <button
+            onClick={toggleVideo}
+            className={`w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-300 ${isVideoEnabled
+              ? 'bg-green-600/20 border border-green-500/50 text-green-400 hover:bg-green-600/30'
+              : 'bg-slate-800/50 border border-slate-700/50 text-slate-300 hover:bg-slate-700/50'
+              }`}
+          >
+            {isVideoEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+            <span>{isVideoEnabled ? 'Turn Off Video' : 'Join Video Call'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="p-6 border-t border-slate-800/30">
@@ -286,6 +315,18 @@ const App: React.FC = () => {
         </div>
       </div>
     </div>
+
+    {/* Video Conference Component */}
+    {isVideoEnabled && (
+      <VideoConference
+        socket={socket}
+        roomId={roomId}
+        users={users}
+        currentUserId={currentUserId || socket.id || ''}
+        isVideoEnabled={isVideoEnabled}
+        onToggleVideo={toggleVideo}
+      />
+    )}
   </div>
 }
 
