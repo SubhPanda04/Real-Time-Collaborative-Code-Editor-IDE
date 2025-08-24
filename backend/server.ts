@@ -3,84 +3,40 @@ import http from 'http';
 import { Server, Socket } from 'socket.io';
 import path from "path";
 import axios from 'axios';
-
-interface User {
-  id: string;
-  name: string;
-  isVideoEnabled?: boolean;
-  videoPosition?: { x: number; y: number };
-}
-
-interface Room {
-  users: Map<string, User>; // Changed from Set<string> to Map<string, User>
-  code: string;
-  output?: string;
-  videoUsers: Map<string, { userId: string; userName: string; position: { x: number; y: number } }>;
-}
+import { throttle } from './utils';
+import { User, Room, ServerToClientEvents, ClientToServerEvents } from './types';
 
 const app: Express = express();
 const server = http.createServer(app);
 
-interface ServerToClientEvents {
-  userJoined: (users: User[]) => void; // Changed from string[] to User[]
-  codeUpdate: (code: string) => void;
-  userTyping: (user: string) => void;
-  languageUpdate: (language: string) => void;
-  codeResponse: (data: any) => void;
-  userIdAssigned: (userId: string) => void;
-  // Video conference events
-  'user-joined-video': (data: { userId: string; userName: string; position?: { x: number; y: number } }) => void;
-  'existing-video-users': (users: { userId: string; userName: string; position: { x: number; y: number } }[]) => void;
-  'user-left-video': (data: { userId: string }) => void;
-  offer: (data: { offer: RTCSessionDescriptionInit; fromUserId: string; fromUserName: string }) => void;
-  answer: (data: { answer: RTCSessionDescriptionInit; fromUserId: string }) => void;
-  'ice-candidate': (data: { candidate: RTCIceCandidate; fromUserId: string }) => void;
-  'video-toggle': (data: { userId: string; isVideoEnabled: boolean }) => void;
-  'audio-toggle': (data: { userId: string; isAudioEnabled: boolean }) => void;
-  'video-position-update': (data: { userId: string; position: { x: number; y: number } }) => void;
-}
-
-interface ClientToServerEvents {
-  join: (data: { roomId: string; userName: string }) => void;
-  codeChange: (data: { roomId: string; code: string }) => void;
-  leaveRoom: () => void;
-  typing: (data: { roomId: string; userName: string }) => void;
-  languageChange: (data: { roomId: string; language: string }) => void;
-  compileCode: (data: { code: string; roomId: string; language: string; version: string; input: string }) => void;
-  disconnect: () => void;
-  // Video conference events  
-  'join-video': (data: { roomId: string }) => void;
-  'leave-video': (data: { roomId: string }) => void;
-  offer: (data: { roomId: string; offer: RTCSessionDescriptionInit; targetUserId: string }) => void;
-  answer: (data: { roomId: string; answer: RTCSessionDescriptionInit; targetUserId: string }) => void;
-  'ice-candidate': (data: { roomId: string; candidate: RTCIceCandidate; targetUserId: string }) => void;
-  'video-toggle': (data: { roomId: string; isVideoEnabled: boolean }) => void;
-  'audio-toggle': (data: { roomId: string; isAudioEnabled: boolean }) => void;
-  'check-video-user': (data: { roomId: string; userId: string }) => void;
-  'video-position-change': (data: { roomId: string; userId: string; position: { x: number; y: number } }) => void;
-}
-
-const url = process.env.VITE_SOCKET_URL;
-const interval = 30000;
-
-function reloadWebsite() {
-  axios
-    .get(url)
-    .then((response) => {
-      // Website reloaded successfully
-    })
-    .catch((error) => {
-      console.error(`Error : ${error.message}`);
-    });
-}
-
-setInterval(reloadWebsite, interval);
-
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
-    origin: '*',
+    origin: "*",
+    methods: ["GET", "POST"]
   },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 30000,
+  maxHttpBufferSize: 1e6
 });
+
+const port = process.env.PORT || 5000;
+const serverUrl = `http://localhost:${port}`;
+const interval = 30000;
+let isServerReady = false;
+
+function pingServer() {
+  if (!serverUrl || !isServerReady) {
+    return;
+  }
+
+  axios
+    .get(`${serverUrl}/health`)
+    .catch((error) => {
+      console.error(`Health check failed: ${error.message}`);
+    });
+}
 
 const rooms = new Map<string, Room>();
 
@@ -251,7 +207,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on("video-toggle", ({ roomId, isVideoEnabled }) => {
-    socket.to(roomId).emit("video-toggle", {
+    console.log(`User ${socket.id} toggled video: ${isVideoEnabled}`);
+    // Broadcast to all users in the room including the sender
+    io.to(roomId).emit("video-toggle", {
       userId: socket.id,
       isVideoEnabled
     });
@@ -279,18 +237,24 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on("video-position-change", ({ roomId, userId, position }) => {
+  // Throttle position updates to reduce network traffic
+  const throttledPositionChange = throttle(({ roomId, userId, position }: {
+    roomId: string;
+    userId: string;
+    position: { x: number; y: number }
+  }) => {
     if (rooms.has(roomId)) {
       const room = rooms.get(roomId)!;
       const videoUser = room.videoUsers.get(userId);
 
       if (videoUser) {
         videoUser.position = position;
-        // Broadcast position update to all users in the room
         io.to(roomId).emit("video-position-update", { userId, position });
       }
     }
-  });
+  }, 50);
+
+  socket.on("video-position-change", throttledPositionChange);
 
   socket.on("disconnect", () => {
     if (currentRoom && currentUser) {
@@ -305,14 +269,20 @@ io.on('connection', (socket) => {
   });
 });
 
-const port = process.env.PORT || 5000;
-
-// Use process.cwd() instead of path.resolve() to avoid __dirname conflicts
 const rootDir = process.cwd();
+
+app.get('/health', (req: express.Request, res: express.Response) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 app.use(express.static(path.join(rootDir, "/frontend/dist")));
 app.get('*', (req: express.Request, res: express.Response) => {
   res.sendFile(path.join(rootDir, "frontend", "dist", "index.html"));
 });
 
-server.listen(port);
+let pingInterval: NodeJS.Timeout | null = null;
+
+server.listen(port, () => {
+  isServerReady = true;
+  pingInterval = setInterval(pingServer, interval);
+});
